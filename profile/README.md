@@ -1,122 +1,222 @@
 # InnerVoice (CESPF-NLP)
 
-InnerVoice is a privacy-focused mental health journaling web and mobile application. It provides users with a secure, reflective space to document their thoughts while utilizing advanced language models to offer empathetic, context-aware insights and conversational support.
+InnerVoice is a privacy-focused journaling application for recording reflections and receiving empathetic, AI-assisted insights. The project combines a cross-platform React Native client with a Django REST API that anonymizes journal text, detects crisis language, retrieves relevant past entries, and generates asynchronous reflections through OpenRouter.
 
----
+> [!IMPORTANT]
+> InnerVoice is a journaling and reflection tool, not a replacement for professional mental health care or emergency services.
 
-## 🚀 Features
+## Features
 
-*   **Privacy-First Journaling:** Designed from the ground up to ensure user entries remain private and secure.
-*   **Cross-Platform Experience:** Seamlessly accessible on both mobile and web platforms.
-*   **AI-Assisted Reflection:** Integrates large language models (LLMs) equipped with custom system prompts to provide therapeutic insights and journaling feedback.
-*   **Asynchronous AI Processing:** Non-blocking background task execution ensures a smooth and responsive user interface, even during complex LLM generations.
+- **Cross-platform app:** Runs on Android, iOS, and the web from a React Native and Expo codebase.
+- **Private journaling:** Stores raw journal text in encrypted database fields and keeps an encrypted local journal cache on the client.
+- **PII anonymization:** Uses spaCy named-entity recognition to replace people, locations, and organizations before text is sent to an AI provider.
+- **Crisis-language interception:** Applies deterministic phrase matching and a local classifier before normal journal processing.
+- **AI-assisted reflection:** Uses OpenRouter and a project-specific system prompt to generate empathetic replies, emotion labels, topics, cognitive patterns, and suggested prompts.
+- **Context-aware insights:** Creates local text embeddings and, when PostgreSQL with pgvector is enabled, retrieves semantically related entries for additional context.
+- **Weekly patterns:** Aggregates emotions, topics, activity, and AI-generated weekly reflections.
+- **Asynchronous processing:** Uses Celery with Redis or Valkey for production-style background insight generation. Local development can run tasks eagerly without a worker.
+- **JWT authentication:** Supports registration, login, access-token refresh, and user-scoped journal data.
 
----
+## Tech Stack
 
-## 🛠️ Tech Stack
+### App
 
-**Frontend**
-*   **Flutter:** Framework used for building natively compiled applications for mobile and web from a single codebase.
+- React Native 0.81
+- Expo 54
+- Expo Router 6
+- React 19
+- TypeScript
+- React Navigation
+- AsyncStorage and Expo SecureStore
 
-**Backend & Infrastructure**
-*   **Django:** High-level Python web framework handling the core backend API, user authentication, and database management.
-*   **Celery:** Distributed task queue used to handle asynchronous operations, specifically managing the delayed processing of AI responses.
-*   **Valkey:** High-performance key-value data store acting as the message broker for Celery tasks.
+### API and data
 
-**AI & Third-Party APIs**
-*   **OpenRouter API:** Serves as the gateway to route prompts to various large language models for generating journal responses and analyzing text.
+- Python and Django
+- Django REST Framework
+- Simple JWT
+- Celery
+- SQLite for the default local setup
+- PostgreSQL and pgvector for semantic retrieval
+- Redis or Valkey for caching and queued Celery tasks
+- Encrypted Django model fields
 
----
+### NLP and AI
 
-## 🏗️ Architecture
+- OpenRouter API
+- spaCy for named-entity anonymization
+- FastEmbed with `sentence-transformers/all-MiniLM-L6-v2`
+- scikit-learn for local crisis-language classification
 
-1.  **Client Request:** The user submits a journal entry or prompt via the Flutter application.
-2.  **API Handling:** The Django backend receives the request and creates a background task.
-3.  **Task Queuing:** The task is pushed to **Valkey**, which acts as the message broker.
-4.  **Asynchronous Processing:** **Celery** workers pick up the task from Valkey and initiate a call to the **OpenRouter API** using specialized mental health system prompts.
-5.  **Response Delivery:** Once the LLM generates a response, the Celery worker updates the database, and the result is pushed/fetched back to the Flutter frontend.
+## Repository Structure
 
----
+```text
+.
+├── innervoice-api/   Django REST API, NLP pipeline, Celery tasks, and data models
+└── innervoice-app/   React Native app built with Expo Router and TypeScript
+```
 
-## 💻 Getting Started
+More package-specific notes are available in [`innervoice-api/README.md`](innervoice-api/README.md) and [`innervoice-app/README.md`](innervoice-app/README.md).
+
+## Architecture
+
+1. The Expo app authenticates with the Django API and sends a journal entry.
+2. The API checks the entry for crisis language. A detected risk stops the normal pipeline and instructs the client to show its crisis-support screen.
+3. spaCy replaces recognized names, locations, and organizations with placeholders.
+4. FastEmbed generates a 384-dimensional embedding locally.
+5. With PostgreSQL and pgvector, the API retrieves up to three semantically similar entries belonging to the same user. SQLite development skips this step.
+6. The raw entry is stored in an encrypted field; its anonymized form and embedding are stored for processing and retrieval.
+7. A Celery task sends only the anonymized entry and anonymized historical context to OpenRouter.
+8. The generated reply and structured emotional insight are saved for the app to retrieve.
+
+## Getting Started
 
 ### Prerequisites
-*   [Flutter SDK](https://docs.flutter.dev/get-started/install)
-*   [Python 3.x](https://www.python.org/downloads/)
-*   [Valkey](https://valkey.io/) (Ensure the Valkey server is running locally or via Docker)
-*   OpenRouter API Key
 
-### Backend Setup (Django + Celery)
+- Git
+- Python 3
+- Node.js LTS and npm
+- An OpenRouter API key for generated AI insights
 
-1.  **Clone the repository:**
-    ```bash
-    git clone [https://github.com/yourusername/innervoice.git](https://github.com/yourusername/innervoice.git)
-    cd innervoice/backend
-    ```
+PostgreSQL, pgvector, and Redis or Valkey are optional for the basic local setup. By default, Django uses SQLite, an in-memory cache, and eager Celery tasks.
 
-2.  **Set up a virtual environment:**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-    ```
+### 1. Clone the repository
 
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+```bash
+git clone <repository-url>
+cd innervoice-workplace
+```
 
-4.  **Configure Environment Variables:**
-    Create a `.env` file in the backend root and add your configurations:
-    ```env
-    OPENROUTER_API_KEY=your_api_key_here
-    VALKEY_URL=valkey://localhost:6379/0
-    ```
+### 2. Set up the API
 
-5.  **Run Migrations:**
-    ```bash
-    python manage.py migrate
-    ```
+```bash
+cd innervoice-api
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+cp .env.example .env
+python -m spacy download en_core_web_sm
+python manage.py migrate
+```
 
-6.  **Start the Valkey server** (if not already running).
+On Windows PowerShell, activate the environment with:
 
-7.  **Start the Celery worker:**
-    ```bash
-    celery -A your_project_name worker --loglevel=info
-    ```
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
-8.  **Run the Django development server:**
-    ```bash
-    python manage.py runserver
-    ```
+Edit `innervoice-api/.env` and set at least:
 
-### Frontend Setup (Flutter)
+```env
+OPENROUTER_API_KEY=your_openrouter_api_key
+```
 
-1.  **Navigate to the frontend directory:**
-    ```bash
-    cd ../frontend
-    ```
+Then start Django:
 
-2.  **Install Flutter dependencies:**
-    ```bash
-    flutter pub get
-    ```
+```bash
+python manage.py runserver
+```
 
-3.  **Configure API Endpoints:**
-    Ensure your local environment configuration points to the running Django backend (e.g., `http://127.0.0.1:8000/api/`).
+Use `0.0.0.0:8000` when connecting from a physical device or another machine:
 
-4.  **Run the app:**
-    ```bash
-    flutter run
-    ```
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
 
----
+The embedding model is cached in `innervoice-api/local_ai_models/` and may be downloaded the first time an entry is processed.
 
-## 🤝 Contributing
+### 3. Set up the Expo app
 
-Contributions, issues, and feature requests are welcome! 
+In a second terminal:
 
----
+```bash
+cd innervoice-app
+npm install
+npm run start
+```
 
-## 📄 License
+From the Expo terminal, open the app on a supported Android or iOS device/emulator, or in a web browser. Dedicated scripts are also available:
 
-[Specify your license here, e.g., MIT, GPL-3.0]
+```bash
+npm run android
+npm run ios
+npm run web
+```
+
+The default API URL is `http://127.0.0.1:8000`. Override it without editing committed configuration by setting `EXPO_PUBLIC_API_BASE_URL`:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=http://192.168.1.20:8000 npm run start
+```
+
+Choose the URL for your environment:
+
+- iOS simulator or web: `http://127.0.0.1:8000`
+- Android emulator: `http://10.0.2.2:8000`
+- Physical device: your computer's LAN address, with both devices on the same network
+
+When using Expo web, add the Expo development-server origin to `CORS_ALLOWED_ORIGINS` in `innervoice-api/.env` if it differs from the provided defaults.
+
+## Optional Production-Style Services
+
+To enable pgvector-backed contextual retrieval, set `DATABASE_ENGINE=postgres` and configure the `POSTGRES_*` variables in `innervoice-api/.env`.
+
+To process AI insights through a background worker, start Redis or Valkey, then set:
+
+```env
+CELERY_TASK_ALWAYS_EAGER=false
+CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+```
+
+The Redis protocol URL also works with Valkey. Start a worker from `innervoice-api`:
+
+```bash
+.venv/bin/celery -A InnerVoice worker -l info
+```
+
+To run the scheduled Sunday synthesis job, start Celery Beat separately:
+
+```bash
+.venv/bin/celery -A InnerVoice beat -l info
+```
+
+## API Endpoints
+
+All journal endpoints require a JWT bearer token.
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/register/` | Create an account |
+| `POST` | `/api/v1/auth/login/` | Obtain access and refresh tokens |
+| `POST` | `/api/v1/auth/refresh/` | Refresh an access token |
+| `GET` | `/api/v1/journal/entries/` | List the authenticated user's entries |
+| `POST` | `/api/v1/journal/submit/` | Submit and process a journal entry |
+| `GET` | `/api/v1/journal/insights/latest/` | Fetch the latest generated entry insight |
+| `GET` | `/api/v1/journal/insights/weekly/` | Fetch weekly insight data |
+
+## Development Checks
+
+API:
+
+```bash
+cd innervoice-api
+.venv/bin/python manage.py check
+.venv/bin/python manage.py test
+.venv/bin/python -m pip check
+```
+
+App:
+
+```bash
+cd innervoice-app
+npm run lint
+npx tsc --noEmit
+npm run format:check
+```
+
+## Contributing
+
+Contributions, bug reports, and feature requests are welcome. Please run the relevant checks before opening a pull request.
+
+## License
+
+The app includes the [GNU General Public License v3.0](innervoice-app/LICENSE.md).
